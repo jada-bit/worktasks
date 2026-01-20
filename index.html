@@ -71,6 +71,10 @@
         const X = (props) => <Icon {...props}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></Icon>;
         const ChevronDown = (props) => <Icon {...props}><polyline points="6 9 12 15 18 9"/></Icon>;
         const ChevronUp = (props) => <Icon {...props}><polyline points="18 15 12 9 6 15"/></Icon>;
+        const StickyNote = (props) => <Icon {...props}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></Icon>;
+        const Save = (props) => <Icon {...props}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></Icon>;
+        const Sparkles = (props) => <Icon {...props}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></Icon>;
+        const Edit2 = (props) => <Icon {...props}><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></Icon>;
 
         // --- Confetti Utility ---
         const fireConfetti = () => {
@@ -298,6 +302,34 @@
             );
         };
 
+        const Scratchpad = ({ isOpen, onClose, notes, setNotes }) => {
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed top-20 right-4 sm:right-8 w-80 h-96 z-40 animate-in slide-in-from-right-10 fade-in duration-300">
+                    <div className="bg-yellow-50 dark:bg-slate-800 rounded-xl shadow-2xl border border-yellow-200 dark:border-slate-600 h-full flex flex-col overflow-hidden">
+                        <div className="bg-yellow-100 dark:bg-slate-700 px-4 py-2 flex justify-between items-center border-b border-yellow-200 dark:border-slate-600 cursor-move">
+                            <h3 className="text-sm font-bold text-yellow-800 dark:text-slate-200 flex items-center gap-2">
+                                <StickyNote size={14} className="text-yellow-600 dark:text-yellow-500"/> Quick Notes
+                            </h3>
+                            <button onClick={onClose} className="text-yellow-600 dark:text-slate-400 hover:text-yellow-800 dark:hover:text-white">
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <textarea 
+                            value={notes} 
+                            onChange={(e) => setNotes(e.target.value)} 
+                            className="flex-1 w-full p-4 bg-transparent outline-none resize-none text-slate-700 dark:text-slate-300 text-sm leading-relaxed"
+                            placeholder="Type meeting notes, ideas, or links here... (Auto-saved)"
+                        ></textarea>
+                         <div className="px-4 py-1.5 bg-yellow-100/50 dark:bg-slate-700/50 text-[10px] text-yellow-700 dark:text-slate-400 text-right">
+                            {notes.length} chars
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const SettingsModal = ({ isOpen, onClose, onExport, onImport }) => {
             const fileInputRef = useRef(null);
 
@@ -352,12 +384,164 @@
             );
         };
 
-        // Reuse AddTaskModal and WeeklyReportModal from previous code (omitted here for brevity, assume they exist unchanged or slightly adapted)
-        // Re-injecting AddTaskModal for completeness
-        const AddTaskModal = ({ isOpen, onClose, onAdd, scope }) => {
+        const AIImportModal = ({ isOpen, onClose, onImport }) => {
+            const [rawText, setRawText] = useState('');
+            const [drafts, setDrafts] = useState([]);
+            const [step, setStep] = useState('input'); // 'input' or 'review'
+
+            // Reset when opening
+            useEffect(() => {
+                if (isOpen) {
+                    setRawText('');
+                    setDrafts([]);
+                    setStep('input');
+                }
+            }, [isOpen]);
+
+            const handleAnalyze = () => {
+                if (!rawText.trim()) return;
+
+                // Simple heuristic: split by newlines, clean up markers
+                const lines = rawText.split('\n');
+                const candidates = lines
+                    .map(line => line.trim())
+                    .filter(line => line.length > 0)
+                    .map(line => {
+                        // Remove common list markers: "-", "*", "1.", "[]", "[ ]", "•"
+                        return line.replace(/^(\s*[-*•]|\s*\d+\.|\[\s*\])\s*/, '').trim();
+                    })
+                    .filter(line => line.length > 2); // Filter out very short noise
+
+                // Create draft objects
+                const newDrafts = candidates.map(text => ({
+                    id: crypto.randomUUID(),
+                    title: text,
+                    selected: true
+                }));
+
+                setDrafts(newDrafts);
+                setStep('review');
+            };
+
+            const toggleDraft = (id) => {
+                setDrafts(drafts.map(d => d.id === id ? { ...d, selected: !d.selected } : d));
+            };
+
+            const updateDraftTitle = (id, newTitle) => {
+                setDrafts(drafts.map(d => d.id === id ? { ...d, title: newTitle } : d));
+            };
+
+            const handleFinalize = () => {
+                const toImport = drafts.filter(d => d.selected && d.title.trim());
+                onImport(toImport.map(d => d.title));
+                onClose();
+            };
+
+            const deleteDraft = (id) => {
+                 setDrafts(drafts.filter(d => d.id !== id));
+            };
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-2xl p-6 shadow-2xl flex flex-col max-h-[90vh]">
+                        <div className="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
+                            <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                <Sparkles className="text-indigo-600 dark:text-indigo-400"/>
+                                Import Action Items
+                            </h2>
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        {step === 'input' ? (
+                            <div className="flex flex-col flex-1 space-y-4">
+                                <p className="text-sm text-slate-600 dark:text-slate-300">
+                                    Paste your AI meeting notes below. We'll extract actionable tasks for you to review.
+                                </p>
+                                <textarea
+                                    autoFocus
+                                    className="flex-1 w-full p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none text-sm leading-relaxed resize-none min-h-[300px]"
+                                    placeholder="Paste notes here...&#10;- Action item 1&#10;- Action item 2"
+                                    value={rawText}
+                                    onChange={(e) => setRawText(e.target.value)}
+                                ></textarea>
+                                <div className="flex justify-end pt-2">
+                                    <button 
+                                        onClick={handleAnalyze}
+                                        disabled={!rawText.trim()}
+                                        className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg font-medium shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-2"
+                                    >
+                                        <Sparkles size={18}/> Analyze Notes
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col flex-1 overflow-hidden">
+                                <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
+                                    Review your drafted tasks. Uncheck items to skip, or edit text to refine.
+                                </p>
+                                <div className="flex-1 overflow-y-auto pr-2 space-y-3 subtask-scroll">
+                                    {drafts.length > 0 ? drafts.map((draft) => (
+                                        <div key={draft.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-all ${draft.selected ? 'bg-white dark:bg-slate-700/50 border-indigo-200 dark:border-indigo-900/50' : 'bg-slate-50 dark:bg-slate-900 border-transparent opacity-60'}`}>
+                                            <button 
+                                                onClick={() => toggleDraft(draft.id)}
+                                                className={`mt-1 min-w-[20px] h-5 rounded border flex items-center justify-center transition-colors ${draft.selected ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300 dark:border-slate-600 hover:border-indigo-500'}`}
+                                            >
+                                                {draft.selected && <Check size={14} strokeWidth={4} />}
+                                            </button>
+                                            <input 
+                                                type="text" 
+                                                value={draft.title}
+                                                onChange={(e) => updateDraftTitle(draft.id, e.target.value)}
+                                                className={`flex-1 bg-transparent outline-none text-sm ${draft.selected ? 'text-slate-800 dark:text-slate-100 font-medium' : 'text-slate-500 line-through'}`}
+                                            />
+                                            <button onClick={() => deleteDraft(draft.id)} className="text-slate-400 hover:text-rose-500 p-1">
+                                                <X size={16} />
+                                            </button>
+                                        </div>
+                                    )) : (
+                                        <div className="text-center py-10 text-slate-400 italic">No tasks found. Try analyzing again?</div>
+                                    )}
+                                </div>
+                                <div className="flex justify-between items-center pt-6 border-t border-slate-100 dark:border-slate-700 mt-4">
+                                    <button 
+                                        onClick={() => setStep('input')}
+                                        className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-sm font-medium"
+                                    >
+                                        Back to Input
+                                    </button>
+                                    <button 
+                                        onClick={handleFinalize}
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-medium shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-2"
+                                    >
+                                        Import {drafts.filter(d => d.selected).length} Tasks <ArrowRight size={18}/>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const AddTaskModal = ({ isOpen, onClose, onAdd, scope, templates, onSaveTemplate, onDeleteTemplate }) => {
             const [title, setTitle] = useState('');
             const [description, setDescription] = useState('');
             const [priority, setPriority] = useState('medium');
+            const [selectedTemplate, setSelectedTemplate] = useState('');
+
+            // Reset state when modal opens/closes
+            useEffect(() => {
+                if(isOpen) {
+                    setTitle('');
+                    setDescription('');
+                    setPriority('medium');
+                    setSelectedTemplate('');
+                }
+            }, [isOpen]);
 
             if (!isOpen) return null;
 
@@ -365,16 +549,49 @@
                 e.preventDefault();
                 if (!title.trim()) return;
                 onAdd({ title, description, priority, scope, status: 'todo', subtasks: [] });
-                setTitle('');
-                setDescription('');
-                setPriority('medium');
                 onClose();
+            };
+
+            const handleLoadTemplate = (e) => {
+                const tmplId = e.target.value;
+                setSelectedTemplate(tmplId);
+                const tmpl = templates.find(t => t.id === tmplId);
+                if (tmpl) {
+                    setTitle(tmpl.title);
+                    setDescription(tmpl.description);
+                    setPriority(tmpl.priority);
+                }
+            };
+
+            const handleSaveTemplate = () => {
+                if (!title.trim()) return;
+                const name = window.prompt("Name for this template (e.g., 'Daily Standup'):");
+                if (name) {
+                    onSaveTemplate({ title, description, priority, name });
+                    alert("Template saved!");
+                }
             };
 
             return (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
-                        <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4">New {scope === 'daily' ? 'Daily' : 'Weekly'} Task</h2>
+                        <div className="flex justify-between items-center mb-4">
+                             <h2 className="text-xl font-bold text-slate-800 dark:text-white">New {scope === 'daily' ? 'Daily' : 'Weekly'} Task</h2>
+                             {templates.length > 0 && (
+                                <div className="relative group">
+                                    <select 
+                                        value={selectedTemplate} 
+                                        onChange={handleLoadTemplate} 
+                                        className="appearance-none bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs px-3 py-1.5 rounded-lg font-medium pr-6 outline-none cursor-pointer"
+                                    >
+                                        <option value="">Load Template...</option>
+                                        {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                    </select>
+                                    <ChevronDown size={12} className="absolute right-2 top-2 text-indigo-500 pointer-events-none"/>
+                                </div>
+                             )}
+                        </div>
+                        
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Title</label>
@@ -392,6 +609,13 @@
                                     ))}
                                 </div>
                             </div>
+                            
+                            <div className="flex justify-end">
+                                <button type="button" onClick={handleSaveTemplate} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+                                    <Save size={12}/> Save inputs as Template
+                                </button>
+                            </div>
+
                             <div className="flex gap-3 mt-6">
                                 <button type="button" onClick={onClose} className="flex-1 py-2.5 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">Cancel</button>
                                 <button type="submit" className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg shadow-lg">Create Task</button>
@@ -463,10 +687,20 @@
                 const saved = localStorage.getItem('zenflow_tasks');
                 return saved ? JSON.parse(saved) : [];
             });
+            const [templates, setTemplates] = useState(() => {
+                const saved = localStorage.getItem('zenflow_templates');
+                return saved ? JSON.parse(saved) : [];
+            });
+            const [quickNotes, setQuickNotes] = useState(() => {
+                return localStorage.getItem('zenflow_notes') || '';
+            });
+
             const [scope, setScope] = useState('daily');
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [isReportOpen, setIsReportOpen] = useState(false);
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+            const [isNotesOpen, setIsNotesOpen] = useState(false);
+            const [isImportOpen, setIsImportOpen] = useState(false);
             const [darkMode, setDarkMode] = useState(() => localStorage.getItem('zenflow_theme') === 'dark');
             const isThursday = new Date().getDay() === 4;
 
@@ -479,10 +713,42 @@
 
             // --- Effects ---
             useEffect(() => { localStorage.setItem('zenflow_tasks', JSON.stringify(tasks)); }, [tasks]);
+            useEffect(() => { localStorage.setItem('zenflow_templates', JSON.stringify(templates)); }, [templates]);
+            useEffect(() => { localStorage.setItem('zenflow_notes', quickNotes); }, [quickNotes]);
+            
             useEffect(() => {
                 if (darkMode) { document.documentElement.classList.add('dark'); localStorage.setItem('zenflow_theme', 'dark'); } 
                 else { document.documentElement.classList.remove('dark'); localStorage.setItem('zenflow_theme', 'light'); }
             }, [darkMode]);
+
+            // Keyboard Shortcuts
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    // Ignore if typing in input/textarea
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                        if (e.key === 'Escape') {
+                            e.target.blur(); // Just blur field
+                            return; 
+                        }
+                        return; 
+                    }
+
+                    if (e.key === 'n' || e.key === 'N') {
+                        e.preventDefault();
+                        setIsModalOpen(true);
+                    }
+                    if (e.key === 'Escape') {
+                        setIsModalOpen(false);
+                        setIsReportOpen(false);
+                        setIsSettingsOpen(false);
+                        setIsNotesOpen(false);
+                        setIsImportOpen(false);
+                    }
+                };
+
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, []);
 
             // Timer Interval
             useEffect(() => {
@@ -503,6 +769,22 @@
             const handleAddTask = (taskData) => {
                 const newTask = { id: crypto.randomUUID(), ...taskData, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
                 setTasks(prev => [newTask, ...prev]);
+            };
+
+            const handleBatchAdd = (titles) => {
+                const newTasks = titles.map(title => ({
+                    id: crypto.randomUUID(),
+                    title,
+                    description: 'Imported from AI Notes',
+                    priority: 'medium',
+                    scope, // use current scope
+                    status: 'todo',
+                    subtasks: [],
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                }));
+                setTasks(prev => [...newTasks, ...prev]);
+                fireConfetti();
             };
 
             const handleUpdateTask = (taskId, updates) => {
@@ -531,6 +813,15 @@
                 }
             };
 
+            const handleSaveTemplate = (templateData) => {
+                const newTemplate = { id: crypto.randomUUID(), ...templateData };
+                setTemplates(prev => [...prev, newTemplate]);
+            };
+
+            const handleDeleteTemplate = (id) => {
+                setTemplates(prev => prev.filter(t => t.id !== id));
+            };
+
             // Focus Handlers
             const handleStartFocus = (task) => {
                 if (focusState.taskId === task.id) return; // Already focused
@@ -543,7 +834,8 @@
 
             // Import/Export Handlers
             const handleExport = () => {
-                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(tasks));
+                const data = { tasks, templates, notes: quickNotes };
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
                 const downloadAnchorNode = document.createElement('a');
                 downloadAnchorNode.setAttribute("href", dataStr);
                 downloadAnchorNode.setAttribute("download", "zenflow_backup.json");
@@ -556,10 +848,20 @@
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     try {
-                        const importedTasks = JSON.parse(e.target.result);
-                        if (Array.isArray(importedTasks)) {
-                            if(window.confirm(`Found ${importedTasks.length} tasks. Overwrite current data?`)) {
-                                setTasks(importedTasks);
+                        const importedData = JSON.parse(e.target.result);
+                        if (Array.isArray(importedData)) {
+                             // Legacy backup support (just tasks)
+                             if(window.confirm(`Found ${importedData.length} tasks. Overwrite current data?`)) {
+                                setTasks(importedData);
+                                setIsSettingsOpen(false);
+                                fireConfetti();
+                            }
+                        } else if (importedData.tasks) {
+                            // New backup support
+                            if(window.confirm(`Import backup? This will overwrite current tasks, templates, and notes.`)) {
+                                setTasks(importedData.tasks || []);
+                                setTemplates(importedData.templates || []);
+                                setQuickNotes(importedData.notes || '');
                                 setIsSettingsOpen(false);
                                 fireConfetti();
                             }
@@ -587,6 +889,10 @@
                                 <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-indigo-400 dark:to-violet-400">ZenFlow</h1>
                             </div>
                             <div className="flex items-center gap-2">
+                                <button onClick={() => setIsNotesOpen(!isNotesOpen)} className={`p-2 rounded-full transition-colors ${isNotesOpen ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600' : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`} title="Quick Notes">
+                                    <StickyNote size={20} />
+                                </button>
+                                <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
                                 <button onClick={() => setIsReportOpen(true)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${isThursday ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/50 animate-pulse' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
                                     <FileText size={18} /> {isThursday && <span className="hidden sm:inline">1:1 Ready</span>}
                                 </button>
@@ -597,7 +903,7 @@
                         </div>
                     </header>
 
-                    <main className="max-w-7xl mx-auto px-4 py-8 pb-32">
+                    <main className="max-w-7xl mx-auto px-4 py-8 pb-32 relative">
                         {/* Scope Switcher */}
                         <div className="flex justify-center mb-8">
                             <div className="bg-white dark:bg-slate-800 p-1.5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 inline-flex">
@@ -610,7 +916,21 @@
                         <div className="max-w-2xl mx-auto mb-10">
                             <div className="flex justify-between items-end mb-2">
                                 <h2 className="text-2xl font-bold flex items-center gap-2">{scope === 'daily' ? 'Today\'s Plan' : 'Week Overview'} {stats.completed === stats.total && stats.total > 0 && (<Trophy className="text-amber-500 animate-bounce" size={24} />)}</h2>
-                                <button onClick={() => setIsModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2"><Plus size={18} /> Add Task</button>
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => setIsImportOpen(true)}
+                                        className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2" 
+                                    >
+                                        <Sparkles size={18} /> Import Actions
+                                    </button>
+                                    <button 
+                                        onClick={() => setIsModalOpen(true)} 
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2" 
+                                        title="Shortcut: Press 'N'"
+                                    >
+                                        <Plus size={18} /> Add Task
+                                    </button>
+                                </div>
                             </div>
                             <ProgressBar total={stats.total} completed={stats.completed} />
                         </div>
@@ -651,9 +971,19 @@
                         </div>
                     </main>
 
-                    <AddTaskModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onAdd={handleAddTask} scope={scope} />
+                    <AddTaskModal 
+                        isOpen={isModalOpen} 
+                        onClose={() => setIsModalOpen(false)} 
+                        onAdd={handleAddTask} 
+                        scope={scope} 
+                        templates={templates}
+                        onSaveTemplate={handleSaveTemplate}
+                        onDeleteTemplate={handleDeleteTemplate}
+                    />
                     <WeeklyReportModal isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} tasks={tasks} />
                     <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onExport={handleExport} onImport={handleImport} />
+                    <AIImportModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} onImport={handleBatchAdd} />
+                    <Scratchpad isOpen={isNotesOpen} onClose={() => setIsNotesOpen(false)} notes={quickNotes} setNotes={setQuickNotes} />
                     
                     {/* Focus Timer Widget */}
                     {focusState.taskId && (
