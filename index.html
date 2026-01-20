@@ -1,0 +1,497 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Plus, 
+  Calendar, 
+  CheckCircle, 
+  Clock, 
+  MoreHorizontal, 
+  Trash2, 
+  ArrowRight, 
+  ArrowLeft,
+  Sun,
+  Moon,
+  Layout,
+  List,
+  Trophy
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  signInWithCustomToken,
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  onSnapshot, 
+  serverTimestamp 
+} from 'firebase/firestore';
+
+// --- Firebase Configuration & Initialization ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'zenflow-v1';
+
+// --- Confetti Utility ---
+const fireConfetti = () => {
+  const colors = ['#60A5FA', '#34D399', '#F472B6', '#FBBF24'];
+  for (let i = 0; i < 50; i++) {
+    const spark = document.createElement('div');
+    spark.className = 'fixed pointer-events-none z-50 animate-ping';
+    spark.style.left = Math.random() * 100 + 'vw';
+    spark.style.top = Math.random() * 100 + 'vh';
+    spark.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+    spark.style.width = Math.random() * 10 + 'px';
+    spark.style.height = spark.style.width;
+    spark.style.borderRadius = '50%';
+    spark.style.opacity = '0';
+    spark.style.transition = 'opacity 1s ease-out, transform 1s ease-out';
+    document.body.appendChild(spark);
+    
+    // Simple animation fallback logic
+    setTimeout(() => {
+        spark.style.opacity = '1';
+        spark.style.transform = `translate(${Math.random() * 200 - 100}px, ${Math.random() * 200 - 100}px)`;
+    }, 10);
+    setTimeout(() => spark.remove(), 1000);
+  }
+};
+
+// --- Components ---
+
+const ProgressBar = ({ total, completed }) => {
+  const percentage = total === 0 ? 0 : Math.round((completed / total) * 100);
+  
+  return (
+    <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5 mb-6 transition-colors duration-300">
+      <div 
+        className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out" 
+        style={{ width: `${percentage}%` }}
+      ></div>
+      <div className="text-right text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
+        {percentage}% Complete
+      </div>
+    </div>
+  );
+};
+
+const TaskCard = ({ task, onMove, onDelete }) => {
+  const priorityColors = {
+    low: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+    medium: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    high: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
+  };
+
+  return (
+    <div className="group bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 hover:shadow-md transition-all duration-200 animate-in fade-in slide-in-from-bottom-2">
+      <div className="flex justify-between items-start mb-2">
+        <span className={`text-xs px-2 py-1 rounded-full font-semibold ${priorityColors[task.priority]}`}>
+          {task.priority.toUpperCase()}
+        </span>
+        <button 
+          onClick={() => onDelete(task.id)}
+          className="text-slate-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+      
+      <h3 className="font-semibold text-slate-800 dark:text-slate-100 mb-1">{task.title}</h3>
+      {task.description && (
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-3 line-clamp-2">{task.description}</p>
+      )}
+
+      <div className="flex justify-between items-center mt-4 pt-3 border-t border-slate-50 dark:border-slate-700/50">
+        <div className="flex gap-1">
+          {task.status !== 'todo' && (
+            <button 
+              onClick={() => onMove(task, -1)}
+              className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-500 transition-colors"
+              title="Move Back"
+            >
+              <ArrowLeft size={16} />
+            </button>
+          )}
+        </div>
+        
+        <span className="text-xs text-slate-400 font-mono">
+          {new Date(task.createdAt?.seconds * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+        </span>
+
+        <div className="flex gap-1">
+          {task.status !== 'done' && (
+            <button 
+              onClick={() => onMove(task, 1)}
+              className="p-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg transition-colors"
+              title="Move Forward"
+            >
+              <ArrowRight size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AddTaskModal = ({ isOpen, onClose, onAdd, scope }) => {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState('medium');
+
+  if (!isOpen) return null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+    onAdd({ title, description, priority, scope, status: 'todo' });
+    setTitle('');
+    setDescription('');
+    setPriority('medium');
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl transform transition-all scale-100">
+        <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4">New {scope === 'daily' ? 'Daily' : 'Weekly'} Task</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Title</label>
+            <input 
+              autoFocus
+              type="text" 
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+              placeholder="What needs to be done?"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Description (Optional)</label>
+            <textarea 
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all h-24 resize-none"
+              placeholder="Details..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Priority</label>
+            <div className="flex gap-2">
+              {['low', 'medium', 'high'].map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPriority(p)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium capitalize transition-all ${
+                    priority === p 
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' 
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-3 mt-6">
+            <button 
+              type="button" 
+              onClick={onClose}
+              className="flex-1 py-2.5 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button 
+              type="submit" 
+              className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg shadow-lg shadow-indigo-500/30 transition-all transform active:scale-95"
+            >
+              Create Task
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default function ZenFlowApp() {
+  const [user, setUser] = useState(null);
+  const [tasks, setTasks] = useState([]);
+  const [scope, setScope] = useState('daily'); // 'daily' or 'weekly'
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+
+  // --- Auth & Data Effects ---
+  useEffect(() => {
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    return onAuthStateChanged(auth, setUser);
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    
+    // Using a simple query for everything and filtering client-side
+    // to avoid complex index requirements on the fly.
+    const q = collection(db, 'artifacts', appId, 'users', user.uid, 'tasks');
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const loadedTasks = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      // Sort in memory by createdAt (descending)
+      loadedTasks.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setTasks(loadedTasks);
+    }, (error) => {
+      console.error("Data fetch error:", error);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // --- Handlers ---
+
+  const handleAddTask = async (taskData) => {
+    if (!user) return;
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'tasks'), {
+        ...taskData,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    } catch (e) {
+      console.error("Error adding task:", e);
+    }
+  };
+
+  const handleMoveTask = async (task, direction) => {
+    if (!user) return;
+    const stages = ['todo', 'doing', 'done'];
+    const currentIndex = stages.indexOf(task.status);
+    const newIndex = currentIndex + direction;
+
+    if (newIndex >= 0 && newIndex < stages.length) {
+      const newStatus = stages[newIndex];
+      
+      // Satisfaction boost
+      if (newStatus === 'done') fireConfetti();
+
+      try {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', task.id), {
+          status: newStatus,
+          updatedAt: serverTimestamp()
+        });
+      } catch (e) {
+        console.error("Error moving task:", e);
+      }
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', taskId));
+    } catch (e) {
+      console.error("Error deleting task:", e);
+    }
+  };
+
+  // --- Derived State ---
+  const currentTasks = useMemo(() => {
+    return tasks.filter(t => t.scope === scope);
+  }, [tasks, scope]);
+
+  const stats = useMemo(() => {
+    const total = currentTasks.length;
+    const completed = currentTasks.filter(t => t.status === 'done').length;
+    return { total, completed };
+  }, [currentTasks]);
+
+  // --- Render ---
+  return (
+    <div className={`min-h-screen transition-colors duration-300 font-sans ${darkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
+      
+      {/* Header */}
+      <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 px-6 py-4">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="bg-indigo-600 p-2 rounded-lg text-white">
+              <Layout size={20} />
+            </div>
+            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-indigo-400 dark:to-violet-400">
+              ZenFlow
+            </h1>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setDarkMode(!darkMode)}
+              className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-colors"
+            >
+              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
+            <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+            {user ? (
+               <span className="text-xs text-slate-400 font-mono px-2">ID: {user.uid.slice(0, 6)}</span>
+            ) : (
+               <span className="text-xs text-indigo-500 animate-pulse">Syncing...</span>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        
+        {/* Scope Switcher */}
+        <div className="flex justify-center mb-8">
+          <div className="bg-white dark:bg-slate-800 p-1.5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 inline-flex">
+            <button
+              onClick={() => setScope('daily')}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                scope === 'daily' 
+                  ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 shadow-sm' 
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
+            >
+              <Clock size={16} />
+              Daily Focus
+            </button>
+            <button
+              onClick={() => setScope('weekly')}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                scope === 'weekly' 
+                  ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 shadow-sm' 
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
+            >
+              <Calendar size={16} />
+              Weekly Goals
+            </button>
+          </div>
+        </div>
+
+        {/* Stats & Progress */}
+        <div className="max-w-2xl mx-auto mb-10">
+           <div className="flex justify-between items-end mb-2">
+             <h2 className="text-2xl font-bold flex items-center gap-2">
+               {scope === 'daily' ? 'Today\'s Plan' : 'Week Overview'}
+               {stats.completed === stats.total && stats.total > 0 && (
+                 <Trophy className="text-amber-500 animate-bounce" size={24} />
+               )}
+             </h2>
+             <button 
+               onClick={() => setIsModalOpen(true)}
+               className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2"
+             >
+               <Plus size={18} />
+               Add Task
+             </button>
+           </div>
+           <ProgressBar total={stats.total} completed={stats.completed} />
+        </div>
+
+        {/* Kanban Board */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* TO DO */}
+          <div className="flex flex-col gap-4">
+             <div className="flex items-center justify-between pb-3 border-b-2 border-slate-200 dark:border-slate-700">
+                <span className="font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-slate-400"></div>
+                  To Do
+                </span>
+                <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs py-0.5 px-2 rounded-full font-mono">
+                  {currentTasks.filter(t => t.status === 'todo').length}
+                </span>
+             </div>
+             <div className="space-y-3 min-h-[200px]">
+               {currentTasks.filter(t => t.status === 'todo').map(task => (
+                 <TaskCard 
+                    key={task.id} 
+                    task={task} 
+                    onMove={handleMoveTask}
+                    onDelete={handleDeleteTask} 
+                 />
+               ))}
+               {currentTasks.filter(t => t.status === 'todo').length === 0 && (
+                 <div className="text-center py-10 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
+                   <p className="text-slate-400 text-sm">No pending tasks.</p>
+                 </div>
+               )}
+             </div>
+          </div>
+
+          {/* IN PROGRESS */}
+          <div className="flex flex-col gap-4">
+             <div className="flex items-center justify-between pb-3 border-b-2 border-indigo-200 dark:border-indigo-900">
+                <span className="font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                  In Progress
+                </span>
+                <span className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-xs py-0.5 px-2 rounded-full font-mono">
+                  {currentTasks.filter(t => t.status === 'doing').length}
+                </span>
+             </div>
+             <div className="space-y-3 min-h-[200px]">
+               {currentTasks.filter(t => t.status === 'doing').map(task => (
+                 <TaskCard 
+                    key={task.id} 
+                    task={task} 
+                    onMove={handleMoveTask}
+                    onDelete={handleDeleteTask} 
+                 />
+               ))}
+             </div>
+          </div>
+
+          {/* DONE */}
+          <div className="flex flex-col gap-4">
+             <div className="flex items-center justify-between pb-3 border-b-2 border-emerald-200 dark:border-emerald-900">
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                  Done
+                </span>
+                <span className="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs py-0.5 px-2 rounded-full font-mono">
+                  {currentTasks.filter(t => t.status === 'done').length}
+                </span>
+             </div>
+             <div className="space-y-3 min-h-[200px]">
+               {currentTasks.filter(t => t.status === 'done').map(task => (
+                 <TaskCard 
+                    key={task.id} 
+                    task={task} 
+                    onMove={handleMoveTask}
+                    onDelete={handleDeleteTask} 
+                 />
+               ))}
+             </div>
+          </div>
+        </div>
+
+      </main>
+
+      <AddTaskModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        onAdd={handleAddTask}
+        scope={scope}
+      />
+
+    </div>
+  );
+}
