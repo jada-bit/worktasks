@@ -3,1004 +3,637 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZenFlow Task Manager</title>
+    <title>Executive Worklog Dashboard</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                    animation: {
-                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-                    }
-                }
-            }
-        }
-    </script>
-    <!-- React & ReactDOM -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Babel -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        /* Custom Scrollbar for subtasks */
-        .subtask-scroll::-webkit-scrollbar { width: 4px; }
-        .subtask-scroll::-webkit-scrollbar-track { background: transparent; }
-        .subtask-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
-        .dark .subtask-scroll::-webkit-scrollbar-thumb { background: #475569; }
+        /* Custom scrollbar for table */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Calendar Specific Styles */
+        .calendar-grid-line { border-top: 1px solid #e2e8f0; }
+        .calendar-grid-line-minor { border-top: 1px dashed #f1f5f9; }
     </style>
 </head>
-<body class="bg-slate-50 transition-colors duration-300">
-    <div id="root"></div>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen">
 
-    <script type="text/babel">
-        const { useState, useEffect, useMemo, useRef } = React;
+    <!-- Navbar -->
+    <nav class="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
+        <div class="flex items-center gap-3">
+            <div class="bg-indigo-600 p-2 rounded-lg text-white">
+                <i data-lucide="briefcase" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold text-slate-900 leading-none">Executive Worklog</h1>
+                <p class="text-xs text-slate-500 mt-1">Track. Analyze. Report.</p>
+            </div>
+        </div>
+        <button onclick="exportCSV()" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-md transition-colors">
+            <i data-lucide="download" class="w-4 h-4"></i>
+            Export CSV
+        </button>
+    </nav>
 
-        // --- Icons ---
-        const Icon = ({ children, size = 20, className = "" }) => (
-            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>
-        );
+    <main class="max-w-6xl mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Left Column: Input Form -->
+        <div class="lg:col-span-1 space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <i data-lucide="plus" class="w-4 h-4 text-indigo-600"></i>
+                    Log Activity
+                </h2>
+                <form id="logForm" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-500 uppercase mb-1">Date</label>
+                            <input type="date" id="dateInput" required class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-500 uppercase mb-1">Start Time</label>
+                            <input type="time" id="startTimeInput" required class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                    </div>
 
-        const Plus = (props) => <Icon {...props}><path d="M5 12h14M12 5v14"/></Icon>;
-        const Calendar = (props) => <Icon {...props}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></Icon>;
-        const Clock = (props) => <Icon {...props}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></Icon>;
-        const Trash2 = (props) => <Icon {...props}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></Icon>;
-        const ArrowRight = (props) => <Icon {...props}><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></Icon>;
-        const ArrowLeft = (props) => <Icon {...props}><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></Icon>;
-        const Sun = (props) => <Icon {...props}><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></Icon>;
-        const Moon = (props) => <Icon {...props}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></Icon>;
-        const Layout = (props) => <Icon {...props}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></Icon>;
-        const Trophy = (props) => <Icon {...props}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></Icon>;
-        const FileText = (props) => <Icon {...props}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></Icon>;
-        const Clipboard = (props) => <Icon {...props}><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></Icon>;
-        const Check = (props) => <Icon {...props}><polyline points="20 6 9 17 4 12"/></Icon>;
-        const Settings = (props) => <Icon {...props}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></Icon>;
-        const Download = (props) => <Icon {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></Icon>;
-        const Upload = (props) => <Icon {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></Icon>;
-        const Play = (props) => <Icon {...props}><polygon points="5 3 19 12 5 21 5 3"/></Icon>;
-        const Pause = (props) => <Icon {...props}><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></Icon>;
-        const RotateCcw = (props) => <Icon {...props}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></Icon>;
-        const ListChecks = (props) => <Icon {...props}><path d="M10 13h10"/><path d="M10 17h10"/><path d="M10 9h10"/><path d="M4 8h.01"/><path d="M4 12h.01"/><path d="M4 16h.01"/></Icon>;
-        const X = (props) => <Icon {...props}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></Icon>;
-        const ChevronDown = (props) => <Icon {...props}><polyline points="6 9 12 15 18 9"/></Icon>;
-        const ChevronUp = (props) => <Icon {...props}><polyline points="18 15 12 9 6 15"/></Icon>;
-        const StickyNote = (props) => <Icon {...props}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></Icon>;
-        const Save = (props) => <Icon {...props}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></Icon>;
-        const Sparkles = (props) => <Icon {...props}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></Icon>;
-        const Edit2 = (props) => <Icon {...props}><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></Icon>;
-
-        // --- Confetti Utility ---
-        const fireConfetti = () => {
-            const colors = ['#60A5FA', '#34D399', '#F472B6', '#FBBF24'];
-            for (let i = 0; i < 50; i++) {
-                const spark = document.createElement('div');
-                spark.className = 'fixed pointer-events-none z-50 animate-ping';
-                spark.style.left = Math.random() * 100 + 'vw';
-                spark.style.top = Math.random() * 100 + 'vh';
-                spark.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
-                spark.style.width = Math.random() * 10 + 'px';
-                spark.style.height = spark.style.width;
-                spark.style.borderRadius = '50%';
-                spark.style.opacity = '0';
-                spark.style.transition = 'opacity 1s ease-out, transform 1s ease-out';
-                document.body.appendChild(spark);
-                setTimeout(() => {
-                    spark.style.opacity = '1';
-                    spark.style.transform = `translate(${Math.random() * 200 - 100}px, ${Math.random() * 200 - 100}px)`;
-                }, 10);
-                setTimeout(() => spark.remove(), 1000);
-            }
-        };
-
-        // --- Helper Functions ---
-        const formatTime = (seconds) => {
-            const mins = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-        };
-
-        // --- Components ---
-
-        const ProgressBar = ({ total, completed }) => {
-            const percentage = total === 0 ? 0 : Math.round((completed / total) * 100);
-            return (
-                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5 mb-6 transition-colors duration-300">
-                    <div className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out" style={{ width: `${percentage}%` }}></div>
-                    <div className="text-right text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">{percentage}% Complete</div>
-                </div>
-            );
-        };
-
-        const SubtaskList = ({ subtasks, onUpdate }) => {
-            const [newSubtask, setNewSubtask] = useState('');
-            const [isExpanded, setIsExpanded] = useState(false);
-
-            const handleAdd = (e) => {
-                e.preventDefault();
-                if (!newSubtask.trim()) return;
-                const newItem = { id: crypto.randomUUID(), title: newSubtask, completed: false };
-                onUpdate([...subtasks, newItem]);
-                setNewSubtask('');
-            };
-
-            const toggleSubtask = (id) => {
-                const updated = subtasks.map(s => s.id === id ? { ...s, completed: !s.completed } : s);
-                onUpdate(updated);
-            };
-
-            const deleteSubtask = (id) => {
-                const updated = subtasks.filter(s => s.id !== id);
-                onUpdate(updated);
-            };
-
-            const completedCount = subtasks.filter(s => s.completed).length;
-
-            return (
-                <div className="mt-3 border-t border-slate-100 dark:border-slate-700 pt-2">
-                    <button 
-                        onClick={() => setIsExpanded(!isExpanded)}
-                        className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 w-full mb-2"
-                    >
-                        {isExpanded ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
-                        {subtasks.length > 0 ? (
-                            <span>Checklist ({completedCount}/{subtasks.length})</span>
-                        ) : (
-                            <span>Add Checklist</span>
-                        )}
-                        {subtasks.length > 0 && (
-                            <div className="ml-auto w-16 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                                <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${(completedCount/subtasks.length)*100}%`}}></div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 uppercase mb-1">Category</label>
+                        <div class="flex gap-2">
+                            <select id="categoryInput" onchange="handleCategoryChange()" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                                <!-- Options populated by JS -->
+                            </select>
+                            <button type="button" onclick="toggleCategoryManager()" class="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors">
+                                <i data-lucide="filter" class="w-4 h-4" id="catMgrIcon"></i>
+                            </button>
+                        </div>
+                        
+                        <!-- Hidden Category Manager -->
+                        <div id="categoryManager" class="hidden mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200 fade-in">
+                            <label class="text-xs text-slate-500 mb-1 block">Add New Category</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="newCategoryInput" class="flex-1 border border-slate-300 rounded px-2 py-1 text-sm" placeholder="e.g. Crisis Mgmt">
+                                <button type="button" onclick="addCategory()" class="bg-slate-800 text-white px-3 py-1 rounded text-xs font-bold">Add</button>
                             </div>
-                        )}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 uppercase mb-1">Description</label>
+                        <textarea id="descInput" required rows="3" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none" placeholder="What did you work on?"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 uppercase mb-1">Duration (Hours)</label>
+                        <input type="number" id="hoursInput" step="0.25" min="0.25" value="1" required class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg transition-all shadow-sm active:transform active:scale-95">
+                        Log Entry
                     </button>
+                </form>
+            </div>
+        </div>
 
-                    {isExpanded && (
-                        <div className="animate-in slide-in-from-top-2 fade-in duration-200">
-                            <ul className="space-y-2 mb-3 max-h-40 overflow-y-auto subtask-scroll pr-1">
-                                {subtasks.map(s => (
-                                    <li key={s.id} className="flex items-start gap-2 group/item">
-                                        <button 
-                                            onClick={() => toggleSubtask(s.id)}
-                                            className={`mt-0.5 min-w-[16px] h-4 rounded border flex items-center justify-center transition-colors ${s.completed ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 dark:border-slate-600 hover:border-indigo-500'}`}
-                                        >
-                                            {s.completed && <Check size={10} strokeWidth={4} />}
-                                        </button>
-                                        <span className={`text-xs leading-5 flex-1 break-words ${s.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-300'}`}>
-                                            {s.title}
-                                        </span>
-                                        <button onClick={() => deleteSubtask(s.id)} className="text-slate-300 hover:text-rose-500 opacity-0 group-hover/item:opacity-100 transition-opacity">
-                                            <X size={12} />
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
-                            <form onSubmit={handleAdd} className="flex gap-2">
-                                <input 
-                                    type="text" 
-                                    value={newSubtask}
-                                    onChange={(e) => setNewSubtask(e.target.value)}
-                                    placeholder="Add step..." 
-                                    className="flex-1 px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:ring-1 focus:ring-indigo-500 outline-none"
-                                />
-                                <button type="submit" disabled={!newSubtask.trim()} className="bg-slate-100 dark:bg-slate-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 p-1 rounded disabled:opacity-50 transition-colors">
-                                    <Plus size={14} />
-                                </button>
-                            </form>
-                        </div>
-                    )}
-                </div>
-            );
-        };
-
-        const TaskCard = ({ task, onMove, onDelete, onUpdate, onFocus, isFocused }) => {
-            const priorityColors = {
-                low: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-                medium: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-                high: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
-            };
-
-            const handleSubtaskUpdate = (newSubtasks) => {
-                onUpdate(task.id, { subtasks: newSubtasks });
-            };
-
-            return (
-                <div className={`group bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border hover:shadow-md transition-all duration-200 animate-in fade-in slide-in-from-bottom-2 relative ${isFocused ? 'ring-2 ring-indigo-500 border-transparent' : 'border-slate-100 dark:border-slate-700'}`}>
-                    {isFocused && (
-                        <span className="absolute -top-2 -right-2 bg-indigo-600 text-white text-[10px] px-2 py-0.5 rounded-full shadow-sm animate-pulse">FOCUSING</span>
-                    )}
-                    <div className="flex justify-between items-start mb-2">
-                        <span className={`text-xs px-2 py-1 rounded-full font-semibold ${priorityColors[task.priority]}`}>
-                            {task.priority.toUpperCase()}
-                        </span>
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button 
-                                onClick={() => onFocus(task)}
-                                className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-1 rounded"
-                                title="Start Focus Timer"
-                            >
-                                <Play size={16} />
-                            </button>
-                            <button 
-                                onClick={() => onDelete(task.id)}
-                                className="text-slate-400 hover:text-rose-500 p-1 rounded"
-                                title="Delete Task"
-                            >
-                                <Trash2 size={16} />
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <h3 className="font-semibold text-slate-800 dark:text-slate-100 mb-1">{task.title}</h3>
-                    {task.description && (
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-3 line-clamp-2">{task.description}</p>
-                    )}
-
-                    {/* Subtasks Component */}
-                    <SubtaskList subtasks={task.subtasks || []} onUpdate={handleSubtaskUpdate} />
-
-                    <div className="flex justify-between items-center mt-4 pt-3 border-t border-slate-50 dark:border-slate-700/50">
-                        <div className="flex gap-1">
-                            {task.status !== 'todo' && (
-                                <button onClick={() => onMove(task, -1)} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-500 transition-colors">
-                                    <ArrowLeft size={16} />
-                                </button>
-                            )}
-                        </div>
-                        
-                        <span className="text-xs text-slate-400 font-mono">
-                            {new Date(task.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                        </span>
-
-                        <div className="flex gap-1">
-                            {task.status !== 'done' && (
-                                <button onClick={() => onMove(task, 1)} className="p-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg transition-colors">
-                                    <ArrowRight size={16} />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const FocusBar = ({ task, timerState, toggleTimer, resetTimer, stopFocus }) => {
-            if (!task) return null;
-
-            return (
-                <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300 w-full max-w-md px-4">
-                    <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border border-indigo-200 dark:border-indigo-900 shadow-2xl rounded-2xl p-4 flex items-center justify-between ring-1 ring-indigo-500/20">
-                        <div className="flex flex-col">
-                            <span className="text-xs font-semibold text-indigo-500 uppercase tracking-wider">Focus Mode</span>
-                            <span className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate max-w-[150px] sm:max-w-[200px]">{task.title}</span>
-                        </div>
-                        
-                        <div className="flex items-center gap-4">
-                            <span className="text-2xl font-mono font-bold text-indigo-600 dark:text-indigo-400 min-w-[80px] text-center">
-                                {formatTime(timerState.timeLeft)}
-                            </span>
-                            <div className="flex gap-2">
-                                <button onClick={toggleTimer} className="p-2 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-full hover:bg-indigo-200 dark:hover:bg-indigo-900 transition-colors">
-                                    {timerState.isRunning ? <Pause size={18} /> : <Play size={18} />}
-                                </button>
-                                <button onClick={resetTimer} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 rounded-full transition-colors" title="Reset Timer">
-                                    <RotateCcw size={18} />
-                                </button>
-                                <button onClick={stopFocus} className="p-2 hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-500 rounded-full transition-colors" title="Stop Focus">
-                                    <X size={18} />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const Scratchpad = ({ isOpen, onClose, notes, setNotes }) => {
-            if (!isOpen) return null;
-
-            return (
-                <div className="fixed top-20 right-4 sm:right-8 w-80 h-96 z-40 animate-in slide-in-from-right-10 fade-in duration-300">
-                    <div className="bg-yellow-50 dark:bg-slate-800 rounded-xl shadow-2xl border border-yellow-200 dark:border-slate-600 h-full flex flex-col overflow-hidden">
-                        <div className="bg-yellow-100 dark:bg-slate-700 px-4 py-2 flex justify-between items-center border-b border-yellow-200 dark:border-slate-600 cursor-move">
-                            <h3 className="text-sm font-bold text-yellow-800 dark:text-slate-200 flex items-center gap-2">
-                                <StickyNote size={14} className="text-yellow-600 dark:text-yellow-500"/> Quick Notes
-                            </h3>
-                            <button onClick={onClose} className="text-yellow-600 dark:text-slate-400 hover:text-yellow-800 dark:hover:text-white">
-                                <X size={16} />
-                            </button>
-                        </div>
-                        <textarea 
-                            value={notes} 
-                            onChange={(e) => setNotes(e.target.value)} 
-                            className="flex-1 w-full p-4 bg-transparent outline-none resize-none text-slate-700 dark:text-slate-300 text-sm leading-relaxed"
-                            placeholder="Type meeting notes, ideas, or links here... (Auto-saved)"
-                        ></textarea>
-                         <div className="px-4 py-1.5 bg-yellow-100/50 dark:bg-slate-700/50 text-[10px] text-yellow-700 dark:text-slate-400 text-right">
-                            {notes.length} chars
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const SettingsModal = ({ isOpen, onClose, onExport, onImport }) => {
-            const fileInputRef = useRef(null);
-
-            if (!isOpen) return null;
-
-            const handleFileChange = (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    onImport(file);
-                }
-            };
-
-            return (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
-                        <div className="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
-                            <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                                <Settings className="text-indigo-600 dark:text-indigo-400"/>
-                                Settings
-                            </h2>
-                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                                <X size={20} />
-                            </button>
-                        </div>
-                        
-                        <div className="space-y-4">
-                            <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
-                                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Backup Data</h3>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Download a JSON file of your tasks to keep them safe.</p>
-                                <button onClick={onExport} className="w-full flex items-center justify-center gap-2 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-                                    <Download size={16} /> Export Tasks
-                                </button>
-                            </div>
-
-                            <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
-                                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Restore Data</h3>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Upload a previously exported JSON file. <span className="text-rose-500">This will replace current tasks.</span></p>
-                                <input 
-                                    type="file" 
-                                    ref={fileInputRef} 
-                                    onChange={handleFileChange} 
-                                    accept=".json" 
-                                    className="hidden" 
-                                />
-                                <button onClick={() => fileInputRef.current.click()} className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium shadow-sm transition-colors">
-                                    <Upload size={16} /> Import Backup
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const AIImportModal = ({ isOpen, onClose, onImport }) => {
-            const [rawText, setRawText] = useState('');
-            const [drafts, setDrafts] = useState([]);
-            const [step, setStep] = useState('input'); // 'input' or 'review'
-
-            // Reset when opening
-            useEffect(() => {
-                if (isOpen) {
-                    setRawText('');
-                    setDrafts([]);
-                    setStep('input');
-                }
-            }, [isOpen]);
-
-            const handleAnalyze = () => {
-                if (!rawText.trim()) return;
-
-                // Simple heuristic: split by newlines, clean up markers
-                const lines = rawText.split('\n');
-                const candidates = lines
-                    .map(line => line.trim())
-                    .filter(line => line.length > 0)
-                    .map(line => {
-                        // Remove common list markers: "-", "*", "1.", "[]", "[ ]", "•"
-                        return line.replace(/^(\s*[-*•]|\s*\d+\.|\[\s*\])\s*/, '').trim();
-                    })
-                    .filter(line => line.length > 2); // Filter out very short noise
-
-                // Create draft objects
-                const newDrafts = candidates.map(text => ({
-                    id: crypto.randomUUID(),
-                    title: text,
-                    selected: true
-                }));
-
-                setDrafts(newDrafts);
-                setStep('review');
-            };
-
-            const toggleDraft = (id) => {
-                setDrafts(drafts.map(d => d.id === id ? { ...d, selected: !d.selected } : d));
-            };
-
-            const updateDraftTitle = (id, newTitle) => {
-                setDrafts(drafts.map(d => d.id === id ? { ...d, title: newTitle } : d));
-            };
-
-            const handleFinalize = () => {
-                const toImport = drafts.filter(d => d.selected && d.title.trim());
-                onImport(toImport.map(d => d.title));
-                onClose();
-            };
-
-            const deleteDraft = (id) => {
-                 setDrafts(drafts.filter(d => d.id !== id));
-            };
-
-            if (!isOpen) return null;
-
-            return (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-2xl p-6 shadow-2xl flex flex-col max-h-[90vh]">
-                        <div className="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
-                            <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                                <Sparkles className="text-indigo-600 dark:text-indigo-400"/>
-                                Import Action Items
-                            </h2>
-                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                                <X size={24} />
-                            </button>
-                        </div>
-
-                        {step === 'input' ? (
-                            <div className="flex flex-col flex-1 space-y-4">
-                                <p className="text-sm text-slate-600 dark:text-slate-300">
-                                    Paste your AI meeting notes below. We'll extract actionable tasks for you to review.
-                                </p>
-                                <textarea
-                                    autoFocus
-                                    className="flex-1 w-full p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none text-sm leading-relaxed resize-none min-h-[300px]"
-                                    placeholder="Paste notes here...&#10;- Action item 1&#10;- Action item 2"
-                                    value={rawText}
-                                    onChange={(e) => setRawText(e.target.value)}
-                                ></textarea>
-                                <div className="flex justify-end pt-2">
-                                    <button 
-                                        onClick={handleAnalyze}
-                                        disabled={!rawText.trim()}
-                                        className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg font-medium shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-2"
-                                    >
-                                        <Sparkles size={18}/> Analyze Notes
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="flex flex-col flex-1 overflow-hidden">
-                                <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
-                                    Review your drafted tasks. Uncheck items to skip, or edit text to refine.
-                                </p>
-                                <div className="flex-1 overflow-y-auto pr-2 space-y-3 subtask-scroll">
-                                    {drafts.length > 0 ? drafts.map((draft) => (
-                                        <div key={draft.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-all ${draft.selected ? 'bg-white dark:bg-slate-700/50 border-indigo-200 dark:border-indigo-900/50' : 'bg-slate-50 dark:bg-slate-900 border-transparent opacity-60'}`}>
-                                            <button 
-                                                onClick={() => toggleDraft(draft.id)}
-                                                className={`mt-1 min-w-[20px] h-5 rounded border flex items-center justify-center transition-colors ${draft.selected ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300 dark:border-slate-600 hover:border-indigo-500'}`}
-                                            >
-                                                {draft.selected && <Check size={14} strokeWidth={4} />}
-                                            </button>
-                                            <input 
-                                                type="text" 
-                                                value={draft.title}
-                                                onChange={(e) => updateDraftTitle(draft.id, e.target.value)}
-                                                className={`flex-1 bg-transparent outline-none text-sm ${draft.selected ? 'text-slate-800 dark:text-slate-100 font-medium' : 'text-slate-500 line-through'}`}
-                                            />
-                                            <button onClick={() => deleteDraft(draft.id)} className="text-slate-400 hover:text-rose-500 p-1">
-                                                <X size={16} />
-                                            </button>
-                                        </div>
-                                    )) : (
-                                        <div className="text-center py-10 text-slate-400 italic">No tasks found. Try analyzing again?</div>
-                                    )}
-                                </div>
-                                <div className="flex justify-between items-center pt-6 border-t border-slate-100 dark:border-slate-700 mt-4">
-                                    <button 
-                                        onClick={() => setStep('input')}
-                                        className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-sm font-medium"
-                                    >
-                                        Back to Input
-                                    </button>
-                                    <button 
-                                        onClick={handleFinalize}
-                                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-medium shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-2"
-                                    >
-                                        Import {drafts.filter(d => d.selected).length} Tasks <ArrowRight size={18}/>
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-        };
-
-        const AddTaskModal = ({ isOpen, onClose, onAdd, scope, templates, onSaveTemplate, onDeleteTemplate }) => {
-            const [title, setTitle] = useState('');
-            const [description, setDescription] = useState('');
-            const [priority, setPriority] = useState('medium');
-            const [selectedTemplate, setSelectedTemplate] = useState('');
-
-            // Reset state when modal opens/closes
-            useEffect(() => {
-                if(isOpen) {
-                    setTitle('');
-                    setDescription('');
-                    setPriority('medium');
-                    setSelectedTemplate('');
-                }
-            }, [isOpen]);
-
-            if (!isOpen) return null;
-
-            const handleSubmit = (e) => {
-                e.preventDefault();
-                if (!title.trim()) return;
-                onAdd({ title, description, priority, scope, status: 'todo', subtasks: [] });
-                onClose();
-            };
-
-            const handleLoadTemplate = (e) => {
-                const tmplId = e.target.value;
-                setSelectedTemplate(tmplId);
-                const tmpl = templates.find(t => t.id === tmplId);
-                if (tmpl) {
-                    setTitle(tmpl.title);
-                    setDescription(tmpl.description);
-                    setPriority(tmpl.priority);
-                }
-            };
-
-            const handleSaveTemplate = () => {
-                if (!title.trim()) return;
-                const name = window.prompt("Name for this template (e.g., 'Daily Standup'):");
-                if (name) {
-                    onSaveTemplate({ title, description, priority, name });
-                    alert("Template saved!");
-                }
-            };
-
-            return (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
-                        <div className="flex justify-between items-center mb-4">
-                             <h2 className="text-xl font-bold text-slate-800 dark:text-white">New {scope === 'daily' ? 'Daily' : 'Weekly'} Task</h2>
-                             {templates.length > 0 && (
-                                <div className="relative group">
-                                    <select 
-                                        value={selectedTemplate} 
-                                        onChange={handleLoadTemplate} 
-                                        className="appearance-none bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs px-3 py-1.5 rounded-lg font-medium pr-6 outline-none cursor-pointer"
-                                    >
-                                        <option value="">Load Template...</option>
-                                        {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                    </select>
-                                    <ChevronDown size={12} className="absolute right-2 top-2 text-indigo-500 pointer-events-none"/>
-                                </div>
-                             )}
-                        </div>
-                        
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Title</label>
-                                <input autoFocus type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="What needs to be done?" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Description</label>
-                                <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none h-24 resize-none" placeholder="Details..." />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">Priority</label>
-                                <div className="flex gap-2">
-                                    {['low', 'medium', 'high'].map((p) => (
-                                        <button key={p} type="button" onClick={() => setPriority(p)} className={`flex-1 py-2 rounded-lg text-sm font-medium capitalize transition-all ${priority === p ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>{p}</button>
-                                    ))}
-                                </div>
-                            </div>
-                            
-                            <div className="flex justify-end">
-                                <button type="button" onClick={handleSaveTemplate} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
-                                    <Save size={12}/> Save inputs as Template
-                                </button>
-                            </div>
-
-                            <div className="flex gap-3 mt-6">
-                                <button type="button" onClick={onClose} className="flex-1 py-2.5 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">Cancel</button>
-                                <button type="submit" className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg shadow-lg">Create Task</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            );
-        };
-
-        const WeeklyReportModal = ({ isOpen, onClose, tasks }) => {
-            const [notes, setNotes] = useState('');
-            const [copied, setCopied] = useState(false);
-
-            if (!isOpen) return null;
-
-            const sevenDaysAgo = new Date();
-            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-            const completedRecent = tasks.filter(t => t.status === 'done' && new Date(t.updatedAt) > sevenDaysAgo);
-            const inProgress = tasks.filter(t => t.status === 'doing');
-            const highPriorityTodo = tasks.filter(t => t.status === 'todo' && t.priority === 'high');
-
-            const generateText = () => {
-                const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                return `WEEKLY STATUS REPORT (${dateStr})\n\n` +
-                `✅ COMPLETED (Last 7 Days):\n` + (completedRecent.length ? completedRecent.map(t => `- ${t.title}`).join('\n') : '- No tasks completed.') + 
-                `\n\n🚧 IN PROGRESS:\n` + (inProgress.length ? inProgress.map(t => `- ${t.title}`).join('\n') : '- No active tasks.') +
-                `\n\n🔥 HIGH PRIORITY UPCOMING:\n` + (highPriorityTodo.length ? highPriorityTodo.map(t => `- ${t.title}`).join('\n') : '- No urgent blockers.') +
-                (notes ? `\n\n📝 NOTES:\n${notes}` : '');
-            };
-
-            const handleCopy = () => {
-                navigator.clipboard.writeText(generateText());
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-            };
-
-            return (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-2xl p-6 shadow-2xl flex flex-col max-h-[90vh]">
-                        <div className="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
-                            <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><FileText className="text-indigo-600"/> Weekly 1:1 Summary</h2>
-                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={24}/></button>
-                        </div>
-                        <div className="overflow-y-auto pr-2 space-y-6 flex-1">
-                             <div>
-                                <h3 className="text-sm font-semibold text-emerald-600 uppercase tracking-wider mb-2">✅ Accomplished</h3>
-                                <ul className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 space-y-2 text-sm text-slate-700 dark:text-slate-300">{completedRecent.length > 0 ? completedRecent.map(t => <li key={t.id} className="flex gap-2"><span className="text-emerald-500">•</span>{t.title}</li>) : <li className="text-slate-400 italic">None</li>}</ul>
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-semibold text-indigo-600 uppercase tracking-wider mb-2">🚧 In Progress</h3>
-                                <ul className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 space-y-2 text-sm text-slate-700 dark:text-slate-300">{inProgress.length > 0 ? inProgress.map(t => <li key={t.id} className="flex gap-2"><span className="text-indigo-500">•</span>{t.title}</li>) : <li className="text-slate-400 italic">None</li>}</ul>
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">📝 Notes</h3>
-                                <textarea className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none text-sm min-h-[100px]" placeholder="Notes..." value={notes} onChange={(e) => setNotes(e.target.value)}></textarea>
-                            </div>
-                        </div>
-                        <div className="flex gap-3 mt-6 pt-4 border-t border-slate-100 dark:border-slate-700">
-                            <button onClick={handleCopy} className={`flex-1 py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 transition-all ${copied ? 'bg-emerald-600 text-white' : 'bg-indigo-600 text-white'}`}>{copied ? <><Check size={18}/> Copied</> : <><Clipboard size={18}/> Copy Report</>}</button>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        function ZenFlowApp() {
-            const [tasks, setTasks] = useState(() => {
-                const saved = localStorage.getItem('zenflow_tasks');
-                return saved ? JSON.parse(saved) : [];
-            });
-            const [templates, setTemplates] = useState(() => {
-                const saved = localStorage.getItem('zenflow_templates');
-                return saved ? JSON.parse(saved) : [];
-            });
-            const [quickNotes, setQuickNotes] = useState(() => {
-                return localStorage.getItem('zenflow_notes') || '';
-            });
-
-            const [scope, setScope] = useState('daily');
-            const [isModalOpen, setIsModalOpen] = useState(false);
-            const [isReportOpen, setIsReportOpen] = useState(false);
-            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-            const [isNotesOpen, setIsNotesOpen] = useState(false);
-            const [isImportOpen, setIsImportOpen] = useState(false);
-            const [darkMode, setDarkMode] = useState(() => localStorage.getItem('zenflow_theme') === 'dark');
-            const isThursday = new Date().getDay() === 4;
-
-            // Timer State
-            const [focusState, setFocusState] = useState({
-                taskId: null,
-                timeLeft: 25 * 60,
-                isRunning: false
-            });
-
-            // --- Effects ---
-            useEffect(() => { localStorage.setItem('zenflow_tasks', JSON.stringify(tasks)); }, [tasks]);
-            useEffect(() => { localStorage.setItem('zenflow_templates', JSON.stringify(templates)); }, [templates]);
-            useEffect(() => { localStorage.setItem('zenflow_notes', quickNotes); }, [quickNotes]);
+        <!-- Right Column: Dashboard & Logs -->
+        <div class="lg:col-span-2 space-y-6">
             
-            useEffect(() => {
-                if (darkMode) { document.documentElement.classList.add('dark'); localStorage.setItem('zenflow_theme', 'dark'); } 
-                else { document.documentElement.classList.remove('dark'); localStorage.setItem('zenflow_theme', 'light'); }
-            }, [darkMode]);
-
-            // Keyboard Shortcuts
-            useEffect(() => {
-                const handleKeyDown = (e) => {
-                    // Ignore if typing in input/textarea
-                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-                        if (e.key === 'Escape') {
-                            e.target.blur(); // Just blur field
-                            return; 
-                        }
-                        return; 
-                    }
-
-                    if (e.key === 'n' || e.key === 'N') {
-                        e.preventDefault();
-                        setIsModalOpen(true);
-                    }
-                    if (e.key === 'Escape') {
-                        setIsModalOpen(false);
-                        setIsReportOpen(false);
-                        setIsSettingsOpen(false);
-                        setIsNotesOpen(false);
-                        setIsImportOpen(false);
-                    }
-                };
-
-                window.addEventListener('keydown', handleKeyDown);
-                return () => window.removeEventListener('keydown', handleKeyDown);
-            }, []);
-
-            // Timer Interval
-            useEffect(() => {
-                let interval;
-                if (focusState.isRunning && focusState.timeLeft > 0) {
-                    interval = setInterval(() => {
-                        setFocusState(prev => ({ ...prev, timeLeft: prev.timeLeft - 1 }));
-                    }, 1000);
-                } else if (focusState.timeLeft === 0) {
-                    setFocusState(prev => ({ ...prev, isRunning: false }));
-                    fireConfetti(); // Timer finished!
-                    new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg').play().catch(e => console.log('Audio blocked'));
-                }
-                return () => clearInterval(interval);
-            }, [focusState.isRunning, focusState.timeLeft]);
-
-            // --- Handlers ---
-            const handleAddTask = (taskData) => {
-                const newTask = { id: crypto.randomUUID(), ...taskData, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-                setTasks(prev => [newTask, ...prev]);
-            };
-
-            const handleBatchAdd = (titles) => {
-                const newTasks = titles.map(title => ({
-                    id: crypto.randomUUID(),
-                    title,
-                    description: 'Imported from AI Notes',
-                    priority: 'medium',
-                    scope, // use current scope
-                    status: 'todo',
-                    subtasks: [],
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                }));
-                setTasks(prev => [...newTasks, ...prev]);
-                fireConfetti();
-            };
-
-            const handleUpdateTask = (taskId, updates) => {
-                setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t));
-            };
-
-            const handleMoveTask = (task, direction) => {
-                const stages = ['todo', 'doing', 'done'];
-                const currentIndex = stages.indexOf(task.status);
-                const newIndex = currentIndex + direction;
-                if (newIndex >= 0 && newIndex < stages.length) {
-                    const newStatus = stages[newIndex];
-                    if (newStatus === 'done') {
-                        fireConfetti();
-                        // If completing focused task, stop timer
-                        if (focusState.taskId === task.id) setFocusState({ taskId: null, timeLeft: 25 * 60, isRunning: false });
-                    }
-                    handleUpdateTask(task.id, { status: newStatus });
-                }
-            };
-
-            const handleDeleteTask = (taskId) => {
-                if (window.confirm('Are you sure?')) {
-                    setTasks(prev => prev.filter(t => t.id !== taskId));
-                    if (focusState.taskId === taskId) setFocusState({ taskId: null, timeLeft: 25 * 60, isRunning: false });
-                }
-            };
-
-            const handleSaveTemplate = (templateData) => {
-                const newTemplate = { id: crypto.randomUUID(), ...templateData };
-                setTemplates(prev => [...prev, newTemplate]);
-            };
-
-            const handleDeleteTemplate = (id) => {
-                setTemplates(prev => prev.filter(t => t.id !== id));
-            };
-
-            // Focus Handlers
-            const handleStartFocus = (task) => {
-                if (focusState.taskId === task.id) return; // Already focused
-                setFocusState({ taskId: task.id, timeLeft: 25 * 60, isRunning: true });
-            };
-
-            const toggleTimer = () => setFocusState(prev => ({ ...prev, isRunning: !prev.isRunning }));
-            const resetTimer = () => setFocusState(prev => ({ ...prev, timeLeft: 25 * 60, isRunning: false }));
-            const stopFocus = () => setFocusState({ taskId: null, timeLeft: 25 * 60, isRunning: false });
-
-            // Import/Export Handlers
-            const handleExport = () => {
-                const data = { tasks, templates, notes: quickNotes };
-                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
-                const downloadAnchorNode = document.createElement('a');
-                downloadAnchorNode.setAttribute("href", dataStr);
-                downloadAnchorNode.setAttribute("download", "zenflow_backup.json");
-                document.body.appendChild(downloadAnchorNode);
-                downloadAnchorNode.click();
-                downloadAnchorNode.remove();
-            };
-
-            const handleImport = (file) => {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    try {
-                        const importedData = JSON.parse(e.target.result);
-                        if (Array.isArray(importedData)) {
-                             // Legacy backup support (just tasks)
-                             if(window.confirm(`Found ${importedData.length} tasks. Overwrite current data?`)) {
-                                setTasks(importedData);
-                                setIsSettingsOpen(false);
-                                fireConfetti();
-                            }
-                        } else if (importedData.tasks) {
-                            // New backup support
-                            if(window.confirm(`Import backup? This will overwrite current tasks, templates, and notes.`)) {
-                                setTasks(importedData.tasks || []);
-                                setTemplates(importedData.templates || []);
-                                setQuickNotes(importedData.notes || '');
-                                setIsSettingsOpen(false);
-                                fireConfetti();
-                            }
-                        } else {
-                            alert("Invalid file format.");
-                        }
-                    } catch (error) {
-                        alert("Error reading file.");
-                    }
-                };
-                reader.readAsText(file);
-            };
-
-            const currentTasks = useMemo(() => tasks.filter(t => t.scope === scope), [tasks, scope]);
-            const stats = useMemo(() => ({ total: currentTasks.length, completed: currentTasks.filter(t => t.status === 'done').length }), [currentTasks]);
-            const focusedTask = useMemo(() => tasks.find(t => t.id === focusState.taskId), [tasks, focusState.taskId]);
-
-            return (
-                <div className={`min-h-screen transition-colors duration-300 font-sans ${darkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
-                    {/* Header */}
-                    <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 px-6 py-4">
-                        <div className="max-w-7xl mx-auto flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <div className="bg-indigo-600 p-2 rounded-lg text-white"><Layout size={20} /></div>
-                                <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-indigo-400 dark:to-violet-400">ZenFlow</h1>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <button onClick={() => setIsNotesOpen(!isNotesOpen)} className={`p-2 rounded-full transition-colors ${isNotesOpen ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600' : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`} title="Quick Notes">
-                                    <StickyNote size={20} />
-                                </button>
-                                <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
-                                <button onClick={() => setIsReportOpen(true)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${isThursday ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/50 animate-pulse' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
-                                    <FileText size={18} /> {isThursday && <span className="hidden sm:inline">1:1 Ready</span>}
-                                </button>
-                                <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
-                                <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-colors" title="Settings"><Settings size={20} /></button>
-                                <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-colors">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
-                            </div>
-                        </div>
-                    </header>
-
-                    <main className="max-w-7xl mx-auto px-4 py-8 pb-32 relative">
-                        {/* Scope Switcher */}
-                        <div className="flex justify-center mb-8">
-                            <div className="bg-white dark:bg-slate-800 p-1.5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 inline-flex">
-                                <button onClick={() => setScope('daily')} className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all ${scope === 'daily' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}><Clock size={16} /> Daily Focus</button>
-                                <button onClick={() => setScope('weekly')} className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all ${scope === 'weekly' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}><Calendar size={16} /> Weekly Goals</button>
-                            </div>
-                        </div>
-
-                        {/* Stats & Progress */}
-                        <div className="max-w-2xl mx-auto mb-10">
-                            <div className="flex justify-between items-end mb-2">
-                                <h2 className="text-2xl font-bold flex items-center gap-2">{scope === 'daily' ? 'Today\'s Plan' : 'Week Overview'} {stats.completed === stats.total && stats.total > 0 && (<Trophy className="text-amber-500 animate-bounce" size={24} />)}</h2>
-                                <div className="flex gap-2">
-                                    <button 
-                                        onClick={() => setIsImportOpen(true)}
-                                        className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2" 
-                                    >
-                                        <Sparkles size={18} /> Import Actions
-                                    </button>
-                                    <button 
-                                        onClick={() => setIsModalOpen(true)} 
-                                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2" 
-                                        title="Shortcut: Press 'N'"
-                                    >
-                                        <Plus size={18} /> Add Task
-                                    </button>
-                                </div>
-                            </div>
-                            <ProgressBar total={stats.total} completed={stats.completed} />
-                        </div>
-
-                        {/* Kanban Board */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {['todo', 'doing', 'done'].map(status => (
-                                <div key={status} className="flex flex-col gap-4">
-                                    <div className={`flex items-center justify-between pb-3 border-b-2 ${status === 'todo' ? 'border-slate-200 dark:border-slate-700' : status === 'doing' ? 'border-indigo-200 dark:border-indigo-900' : 'border-emerald-200 dark:border-emerald-900'}`}>
-                                        <span className={`font-semibold flex items-center gap-2 ${status === 'todo' ? 'text-slate-500 dark:text-slate-400' : status === 'doing' ? 'text-indigo-600 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                                            <div className={`w-2 h-2 rounded-full ${status === 'todo' ? 'bg-slate-400' : status === 'doing' ? 'bg-indigo-500 animate-pulse' : 'bg-emerald-500'}`}></div>
-                                            {status === 'todo' ? 'To Do' : status === 'doing' ? 'In Progress' : 'Done'}
-                                        </span>
-                                        <span className={`text-xs py-0.5 px-2 rounded-full font-mono ${status === 'todo' ? 'bg-slate-100 dark:bg-slate-800 text-slate-500' : status === 'doing' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600'}`}>
-                                            {currentTasks.filter(t => t.status === status).length}
-                                        </span>
-                                    </div>
-                                    <div className="space-y-3 min-h-[200px]">
-                                        {currentTasks.filter(t => t.status === status).map(task => (
-                                            <TaskCard 
-                                                key={task.id} 
-                                                task={task} 
-                                                onMove={handleMoveTask} 
-                                                onDelete={handleDeleteTask} 
-                                                onUpdate={handleUpdateTask}
-                                                onFocus={handleStartFocus}
-                                                isFocused={focusState.taskId === task.id}
-                                            />
-                                        ))}
-                                        {status === 'todo' && currentTasks.filter(t => t.status === 'todo').length === 0 && (
-                                            <div className="text-center py-10 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                                                <p className="text-slate-400 text-sm">No pending tasks.</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </main>
-
-                    <AddTaskModal 
-                        isOpen={isModalOpen} 
-                        onClose={() => setIsModalOpen(false)} 
-                        onAdd={handleAddTask} 
-                        scope={scope} 
-                        templates={templates}
-                        onSaveTemplate={handleSaveTemplate}
-                        onDeleteTemplate={handleDeleteTemplate}
-                    />
-                    <WeeklyReportModal isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} tasks={tasks} />
-                    <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onExport={handleExport} onImport={handleImport} />
-                    <AIImportModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} onImport={handleBatchAdd} />
-                    <Scratchpad isOpen={isNotesOpen} onClose={() => setIsNotesOpen(false)} notes={quickNotes} setNotes={setQuickNotes} />
-                    
-                    {/* Focus Timer Widget */}
-                    {focusState.taskId && (
-                        <FocusBar 
-                            task={focusedTask} 
-                            timerState={focusState} 
-                            toggleTimer={toggleTimer} 
-                            resetTimer={resetTimer} 
-                            stopFocus={stopFocus} 
-                        />
-                    )}
+            <!-- Dashboard Header/Filters -->
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <div class="flex items-center gap-2">
+                    <div class="p-2 bg-indigo-50 text-indigo-600 rounded-lg" id="headerIcon">
+                        <!-- Icon changes via JS -->
+                    </div>
+                    <div>
+                        <h2 class="font-bold text-slate-800" id="headerTitle">This Week</h2>
+                        <p class="text-xs text-slate-500">
+                            Total: <span class="font-bold text-indigo-600 text-sm" id="totalHoursDisplay">0.0 hrs</span>
+                        </p>
+                    </div>
                 </div>
-            );
+
+                <div class="flex bg-slate-100 p-1 rounded-lg">
+                    <button onclick="setTimeRange('week')" id="btnWeek" class="px-3 py-1.5 text-xs font-medium rounded-md transition-all">Week</button>
+                    <button onclick="setTimeRange('month')" id="btnMonth" class="px-3 py-1.5 text-xs font-medium rounded-md transition-all">Month</button>
+                    <button onclick="setTimeRange('all')" id="btnAll" class="px-3 py-1.5 text-xs font-medium rounded-md transition-all">All</button>
+                </div>
+            </div>
+
+            <!-- Visuals -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Breakdown Card -->
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <h3 class="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                        <i data-lucide="pie-chart" class="w-4 h-4"></i> Category Breakdown
+                    </h3>
+                    <div class="space-y-3" id="breakdownContainer">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- Quick Stats Card -->
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center">
+                    <h3 class="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                        <i data-lucide="trending-up" class="w-4 h-4"></i> Executive Summary
+                    </h3>
+                    <div class="bg-slate-50 rounded-lg p-4 border border-slate-100">
+                        <p class="text-xs text-slate-500 mb-2">Top Focus Area</p>
+                        <div class="text-lg font-bold text-indigo-700 line-clamp-2" id="topFocusArea">N/A</div>
+                        <p class="text-xs text-slate-400 mt-1" id="topFocusStat"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Task List / Calendar Container -->
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <div class="flex items-center gap-4">
+                        <h3 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                            <i data-lucide="list" class="w-4 h-4"></i> Activity Log
+                        </h3>
+                        <div class="flex bg-white border border-slate-200 rounded-lg p-0.5">
+                            <button onclick="setViewMode('list')" id="viewListBtn" class="p-1.5 rounded text-indigo-600 bg-indigo-50"><i data-lucide="list" class="w-4 h-4"></i></button>
+                            <button onclick="setViewMode('calendar')" id="viewCalendarBtn" class="p-1.5 rounded text-slate-400 hover:text-slate-600"><i data-lucide="calendar" class="w-4 h-4"></i></button>
+                        </div>
+                    </div>
+                    <span class="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full" id="entryCount">0 Entries</span>
+                </div>
+                
+                <!-- LIST VIEW -->
+                <div id="listViewContainer" class="max-h-[500px] overflow-y-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 sticky top-0 text-slate-500 font-medium text-xs uppercase shadow-sm z-10">
+                            <tr>
+                                <th class="px-5 py-3">Date</th>
+                                <th class="px-5 py-3">Time</th>
+                                <th class="px-5 py-3">Category</th>
+                                <th class="px-5 py-3">Task</th>
+                                <th class="px-5 py-3 text-right">Hours</th>
+                                <th class="px-5 py-3 text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100" id="taskTableBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                    <div id="emptyState" class="hidden p-8 text-center text-slate-400 text-sm">
+                        No entries found for this time range.
+                    </div>
+                </div>
+
+                <!-- CALENDAR VIEW -->
+                <div id="calendarViewContainer" class="hidden flex flex-col h-[600px]">
+                    <!-- Calendar Controls -->
+                    <div class="flex items-center justify-between px-4 py-2 bg-slate-50 border-b border-slate-200">
+                        <button onclick="changeCalendarDay(-1)" class="p-1 hover:bg-slate-200 rounded"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                        <div class="text-sm font-bold text-slate-700" id="calendarCurrentDate">Today</div>
+                        <button onclick="changeCalendarDay(1)" class="p-1 hover:bg-slate-200 rounded"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+                    </div>
+                    
+                    <!-- Scrollable Timeline -->
+                    <div class="overflow-y-auto flex-1 relative bg-white" id="calendarTimeline">
+                        <!-- Grid and Events injected here -->
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Application Logic -->
+    <script>
+        // --- Configuration & Data ---
+        const DEFAULT_CATEGORIES = [
+            "CX Comms Testing (monthly)",
+            "BSA/AML Testing (monthly)",
+            "Macros Testing (monthly)",
+            "Blog -- Help Center/Resource center (monthly)",
+            "Affiliate testing (initial review, monthly)",
+            "Continuous email testing (initial review, monthly)",
+            "Drafting issues from testing",
+            "Set up monthly and quarterly reporting decks and transfer issues to Asana",
+            "Issues Validation",
+            "Asana Issues management (adding new issues after reporting)",
+            "Process Flow, Reg, or Additional Testing",
+            "UDAAP marketing repository",
+            "Monthly/Quarterly reporting",
+            "Complaints handling",
+            "Complaint reporting",
+            "Website Audit (Quarterly)",
+            "Marketing Audit (annual - comprehensive)",
+            "Governance Audit (annual - comprehensive)",
+            "Documentation not accounted for / cushion",
+            "Meetings",
+            "One-offs / special projects",
+            "Lunch"
+        ];
+
+        // State
+        let tasks = JSON.parse(localStorage.getItem('worklog_tasks_v3')) || [];
+        // Migration: Add startTime if missing
+        tasks = tasks.map(t => ({...t, startTime: t.startTime || "09:00"}));
+        
+        // Updated key to v3 to include Lunch in defaults for existing users
+        let categories = JSON.parse(localStorage.getItem('worklog_categories_v3')) || DEFAULT_CATEGORIES;
+        let timeRange = 'week'; // week, month, all
+        let viewMode = 'list'; // 'list', 'calendar'
+        let calendarDate = new Date(); // Date currently viewed in calendar
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Set default inputs
+            const now = new Date();
+            document.getElementById('dateInput').valueAsDate = now;
+            
+            // Default time to next nearest 15 min slot or current time
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(Math.floor(now.getMinutes()/15)*15).padStart(2, '0');
+            document.getElementById('startTimeInput').value = `${hours}:${minutes}`;
+
+            // Initial Render
+            renderCategoryOptions();
+            updateUI();
+            
+            lucide.createIcons();
+        });
+
+        // --- Core Logic ---
+
+        function save() {
+            localStorage.setItem('worklog_tasks_v3', JSON.stringify(tasks));
+            localStorage.setItem('worklog_categories_v3', JSON.stringify(categories));
+            updateUI();
         }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<ZenFlowApp />);
+        function getDateRangeCutoff() {
+            const now = new Date();
+            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            
+            if (timeRange === 'week') {
+                const day = startOfDay.getDay();
+                const diff = startOfDay.getDate() - day + (day === 0 ? -6 : 1); 
+                const startOfWeek = new Date(startOfDay.setDate(diff));
+                startOfWeek.setHours(0,0,0,0);
+                return startOfWeek;
+            } else if (timeRange === 'month') {
+                return new Date(now.getFullYear(), now.getMonth(), 1);
+            }
+            return new Date(0); // All time
+        }
+
+        function getFilteredTasks() {
+            const cutoff = getDateRangeCutoff();
+            return tasks
+                .filter(t => new Date(t.date) >= cutoff)
+                .sort((a, b) => {
+                    // Sort by date then time
+                    const dateA = new Date(a.date + 'T' + a.startTime);
+                    const dateB = new Date(b.date + 'T' + b.startTime);
+                    return dateB - dateA;
+                });
+        }
+
+        // --- Rendering ---
+
+        function updateUI() {
+            const filtered = getFilteredTasks();
+            renderStats(filtered);
+            renderTable(filtered);
+            renderCalendar();
+            renderControls();
+        }
+
+        function renderCategoryOptions() {
+            const select = document.getElementById('categoryInput');
+            // Preserve selection if possible
+            const current = select.value;
+            select.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+            if (categories.includes(current)) select.value = current;
+        }
+
+        function handleCategoryChange() {
+            const cat = document.getElementById('categoryInput').value;
+            if (cat === 'Lunch') {
+                document.getElementById('hoursInput').value = "1";
+                document.getElementById('descInput').placeholder = "Lunch break";
+            } else {
+                document.getElementById('descInput').placeholder = "What did you work on?";
+            }
+        }
+
+        function renderControls() {
+            // Time Range Tabs
+            ['week', 'month', 'all'].forEach(range => {
+                const btn = document.getElementById(`btn${range.charAt(0).toUpperCase() + range.slice(1)}`);
+                if (range === timeRange) {
+                    btn.className = "px-3 py-1.5 text-xs font-medium rounded-md transition-all bg-white text-indigo-600 shadow-sm";
+                } else {
+                    btn.className = "px-3 py-1.5 text-xs font-medium rounded-md transition-all text-slate-500 hover:text-slate-700";
+                }
+            });
+
+            // View Mode Toggle
+            const btnList = document.getElementById('viewListBtn');
+            const btnCal = document.getElementById('viewCalendarBtn');
+            const listContainer = document.getElementById('listViewContainer');
+            const calContainer = document.getElementById('calendarViewContainer');
+
+            if (viewMode === 'list') {
+                btnList.className = "p-1.5 rounded text-indigo-600 bg-indigo-50 transition-colors";
+                btnCal.className = "p-1.5 rounded text-slate-400 hover:text-slate-600 transition-colors";
+                listContainer.classList.remove('hidden');
+                calContainer.classList.add('hidden');
+            } else {
+                btnList.className = "p-1.5 rounded text-slate-400 hover:text-slate-600 transition-colors";
+                btnCal.className = "p-1.5 rounded text-indigo-600 bg-indigo-50 transition-colors";
+                listContainer.classList.add('hidden');
+                calContainer.classList.remove('hidden');
+            }
+
+            // Header Icon
+            const headerTitle = document.getElementById('headerTitle');
+            const headerIcon = document.getElementById('headerIcon');
+            if (timeRange === 'week') {
+                headerTitle.textContent = "This Week";
+                headerIcon.innerHTML = `<i data-lucide="clock" class="w-5 h-5"></i>`;
+            } else if (timeRange === 'month') {
+                headerTitle.textContent = "This Month";
+                headerIcon.innerHTML = `<i data-lucide="calendar" class="w-5 h-5"></i>`;
+            } else {
+                headerTitle.textContent = "All Time";
+                headerIcon.innerHTML = `<i data-lucide="archive" class="w-5 h-5"></i>`;
+            }
+            lucide.createIcons();
+        }
+
+        function renderStats(filteredTasks) {
+            const totalHours = filteredTasks.reduce((acc, curr) => acc + parseFloat(curr.hours), 0);
+            document.getElementById('totalHoursDisplay').textContent = `${totalHours.toFixed(1)} hrs`;
+
+            const byCategory = filteredTasks.reduce((acc, curr) => {
+                acc[curr.category] = (acc[curr.category] || 0) + parseFloat(curr.hours);
+                return acc;
+            }, {});
+
+            const categoryArray = Object.entries(byCategory)
+                .map(([name, hours]) => ({
+                    name,
+                    hours,
+                    percentage: totalHours > 0 ? (hours / totalHours) * 100 : 0
+                }))
+                .sort((a, b) => b.hours - a.hours);
+
+            const breakdownContainer = document.getElementById('breakdownContainer');
+            if (categoryArray.length === 0) {
+                breakdownContainer.innerHTML = `<div class="text-center py-8 text-slate-400 text-sm italic">No data for this period</div>`;
+            } else {
+                breakdownContainer.innerHTML = categoryArray.slice(0, 5).map(cat => `
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="font-medium text-slate-700 truncate w-3/4" title="${cat.name}">${cat.name}</span>
+                            <span class="text-slate-500">${cat.hours.toFixed(1)}h (${Math.round(cat.percentage)}%)</span>
+                        </div>
+                        <div class="w-full bg-slate-100 rounded-full h-2">
+                            <div class="bg-indigo-500 h-2 rounded-full transition-all duration-500" style="width: ${cat.percentage}%"></div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            const topFocusArea = document.getElementById('topFocusArea');
+            const topFocusStat = document.getElementById('topFocusStat');
+            
+            if (categoryArray.length > 0) {
+                topFocusArea.textContent = categoryArray[0].name;
+                topFocusStat.textContent = `Consumes ${Math.round(categoryArray[0].percentage)}% of your time`;
+            } else {
+                topFocusArea.textContent = "N/A";
+                topFocusStat.textContent = "";
+            }
+        }
+
+        function renderTable(filteredTasks) {
+            const tbody = document.getElementById('taskTableBody');
+            const emptyState = document.getElementById('emptyState');
+            const entryCount = document.getElementById('entryCount');
+
+            entryCount.textContent = `${filteredTasks.length} Entries`;
+
+            if (filteredTasks.length === 0) {
+                tbody.innerHTML = '';
+                emptyState.classList.remove('hidden');
+            } else {
+                emptyState.classList.add('hidden');
+                tbody.innerHTML = filteredTasks.map(task => {
+                    const dateObj = new Date(task.date + 'T00:00:00');
+                    const dateStr = dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', weekday: 'short' });
+                    
+                    return `
+                    <tr class="hover:bg-slate-50 transition-colors group">
+                        <td class="px-5 py-3 text-slate-500 whitespace-nowrap w-24">${dateStr}</td>
+                        <td class="px-5 py-3 text-slate-500 whitespace-nowrap w-20 text-xs font-mono">${task.startTime}</td>
+                        <td class="px-5 py-3 w-48">
+                            <span class="inline-block px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 text-xs font-medium truncate max-w-[140px]" title="${task.category}">${task.category}</span>
+                        </td>
+                        <td class="px-5 py-3 text-slate-700">${task.description}</td>
+                        <td class="px-5 py-3 text-right font-medium text-slate-900 w-24">${parseFloat(task.hours).toFixed(2)}</td>
+                        <td class="px-5 py-3 text-right w-16">
+                            <button onclick="deleteTask('${task.id}')" class="text-slate-300 hover:text-red-500 transition-colors p-1" title="Delete entry">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    `;
+                }).join('');
+                
+                lucide.createIcons();
+            }
+        }
+
+        function renderCalendar() {
+            if (viewMode !== 'calendar') return;
+
+            const container = document.getElementById('calendarTimeline');
+            const dateLabel = document.getElementById('calendarCurrentDate');
+            
+            // Format current calendar date
+            dateLabel.textContent = calendarDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+            // Generate Time Slots (7 AM to 8 PM)
+            const startHour = 7;
+            const endHour = 20;
+            const pxPerHour = 80; 
+            const totalHeight = (endHour - startHour + 1) * pxPerHour;
+
+            let html = `<div class="relative w-full" style="height: ${totalHeight}px;">`;
+
+            // Draw Grid Lines (Every Hour and 15 mins)
+            for (let h = startHour; h <= endHour; h++) {
+                const top = (h - startHour) * pxPerHour;
+                // Hour line
+                html += `
+                    <div class="absolute w-full calendar-grid-line flex items-center" style="top: ${top}px; height: ${pxPerHour}px;">
+                        <span class="text-xs text-slate-400 w-12 text-right pr-2 -mt-[${pxPerHour}px]">${h > 12 ? h-12 + ' PM' : h + ' AM'}</span>
+                    </div>
+                `;
+                // 15, 30, 45 min lines (dashed)
+                for (let m = 15; m < 60; m+=15) {
+                    const subTop = top + (m/60 * pxPerHour);
+                    html += `<div class="absolute w-full calendar-grid-line-minor left-12 right-0" style="top: ${subTop}px;"></div>`;
+                }
+            }
+
+            // Draw Events
+            const currentIsoDate = calendarDate.toISOString().split('T')[0];
+            const dayTasks = tasks.filter(t => t.date === currentIsoDate);
+
+            dayTasks.forEach(task => {
+                const [h, m] = task.startTime.split(':').map(Number);
+                if (h < startHour || h > endHour) return; // Skip if out of view bounds (simple approach)
+
+                const startMinutesFromBase = ((h - startHour) * 60) + m;
+                const topPx = (startMinutesFromBase / 60) * pxPerHour;
+                const heightPx = parseFloat(task.hours) * pxPerHour;
+                
+                // Color coding for Lunch
+                const isLunch = task.category === 'Lunch';
+                const bgClass = isLunch ? 'bg-orange-100' : 'bg-indigo-100';
+                const borderClass = isLunch ? 'border-orange-500' : 'border-indigo-500';
+                const textClass = isLunch ? 'text-orange-900' : 'text-indigo-900';
+
+                html += `
+                    <div class="absolute left-14 right-4 rounded ${bgClass} border-l-4 ${borderClass} px-3 py-1 text-xs overflow-hidden hover:z-10 hover:shadow-md transition-all group" 
+                         style="top: ${topPx}px; height: ${Math.max(heightPx, 20)}px;">
+                        <div class="flex justify-between items-start">
+                            <span class="font-bold ${textClass} truncate">${task.category}</span>
+                            <button onclick="deleteTask('${task.id}')" class="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <i data-lucide="x" class="w-3 h-3"></i>
+                            </button>
+                        </div>
+                        <div class="${textClass} truncate opacity-80">${task.description}</div>
+                        <div class="${textClass} text-[10px] mt-0.5">${task.hours}h</div>
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+            container.innerHTML = html;
+            lucide.createIcons();
+        }
+
+        // --- Interaction Handlers ---
+
+        document.getElementById('logForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const desc = document.getElementById('descInput').value;
+            const hours = parseFloat(document.getElementById('hoursInput').value);
+            const date = document.getElementById('dateInput').value;
+            const category = document.getElementById('categoryInput').value;
+            const startTime = document.getElementById('startTimeInput').value;
+
+            if (!desc || hours <= 0 || !date || !startTime) return;
+
+            tasks.push({
+                id: crypto.randomUUID(),
+                timestamp: Date.now(),
+                date,
+                startTime,
+                category,
+                description: desc,
+                hours
+            });
+
+            // Reset specific fields
+            document.getElementById('descInput').value = '';
+            // Auto-increment time for next task?
+            const [h, m] = startTime.split(':').map(Number);
+            const endDate = new Date();
+            endDate.setHours(h);
+            endDate.setMinutes(m + (hours * 60));
+            const newH = String(endDate.getHours()).padStart(2, '0');
+            const newM = String(endDate.getMinutes()).padStart(2, '0');
+            document.getElementById('startTimeInput').value = `${newH}:${newM}`;
+            
+            // Reset hours if it was set to Lunch default
+            if (category === 'Lunch') {
+                 document.getElementById('hoursInput').value = '1'; 
+            }
+            
+            save();
+        });
+
+        function deleteTask(id) {
+            if(confirm("Are you sure you want to delete this entry?")) {
+                tasks = tasks.filter(t => t.id !== id);
+                save();
+            }
+        }
+
+        function setTimeRange(range) {
+            timeRange = range;
+            updateUI();
+        }
+
+        function setViewMode(mode) {
+            viewMode = mode;
+            // Sync calendar date with input date if switching
+            if (mode === 'calendar') {
+                const inputDate = document.getElementById('dateInput').value;
+                if (inputDate) calendarDate = new Date(inputDate + 'T00:00:00');
+            }
+            updateUI();
+        }
+
+        function changeCalendarDay(delta) {
+            calendarDate.setDate(calendarDate.getDate() + delta);
+            // Sync input form too for convenience
+            const iso = calendarDate.toISOString().split('T')[0];
+            document.getElementById('dateInput').value = iso;
+            updateUI();
+        }
+
+        function toggleCategoryManager() {
+            const mgr = document.getElementById('categoryManager');
+            mgr.classList.toggle('hidden');
+        }
+
+        function addCategory() {
+            const input = document.getElementById('newCategoryInput');
+            const newCat = input.value.trim();
+            if (newCat && !categories.includes(newCat)) {
+                categories.push(newCat);
+                renderCategoryOptions();
+                document.getElementById('categoryInput').value = newCat;
+                input.value = '';
+                save();
+            }
+        }
+
+        function exportCSV() {
+            const filtered = getFilteredTasks();
+            const headers = ["Date", "Start Time", "Category", "Description", "Hours"];
+            const csvContent = [
+                headers.join(","),
+                ...filtered.map(t => 
+                    `${t.date},${t.startTime},"${t.category}","${t.description.replace(/"/g, '""')}",${t.hours}`
+                )
+            ].join("\n");
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `worklog_export_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
     </script>
 </body>
 </html>
