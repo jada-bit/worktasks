@@ -35,10 +35,19 @@
                 <p class="text-xs text-slate-500 mt-1">Track. Analyze. Report.</p>
             </div>
         </div>
-        <button onclick="exportCSV()" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-md transition-colors">
-            <i data-lucide="download" class="w-4 h-4"></i>
-            Export CSV
-        </button>
+        <div class="flex gap-2">
+            <!-- Hidden File Input for Import -->
+            <input type="file" id="importInput" class="hidden" accept=".csv" onchange="importCSV(this)">
+            
+            <button onclick="document.getElementById('importInput').click()" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-md transition-colors" title="Import from CSV backup">
+                <i data-lucide="upload" class="w-4 h-4"></i>
+                Import CSV
+            </button>
+            <button onclick="exportCSV()" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 hover:text-indigo-600 hover:bg-slate-50 rounded-md transition-colors" title="Download backup">
+                <i data-lucide="download" class="w-4 h-4"></i>
+                Export CSV
+            </button>
+        </div>
     </nav>
 
     <main class="max-w-6xl mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -655,6 +664,103 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+        }
+
+        // --- CSV IMPORT LOGIC ---
+        function importCSV(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                processCSV(text);
+                input.value = ''; // Reset input to allow same file selection again
+            };
+            reader.readAsText(file);
+        }
+
+        function processCSV(text) {
+            const lines = text.split('\n').filter(l => l.trim());
+            if (lines.length < 2) return alert("Invalid CSV format or empty file");
+
+            const header = lines[0].toLowerCase();
+            const hasStartTime = header.includes("start time");
+            
+            let importedCount = 0;
+            
+            // Skip header (i=1)
+            for (let i = 1; i < lines.length; i++) {
+                const row = parseCSVRow(lines[i]);
+                if (row.length < 4) continue;
+
+                let date, startTime, category, description, hours;
+
+                if (hasStartTime) {
+                     // Date, Start Time, Category, Description, Hours
+                     [date, startTime, category, description, hours] = row;
+                } else {
+                     // Legacy Support: Date, Category, Description, Hours
+                     [date, category, description, hours] = row;
+                     startTime = "09:00"; 
+                }
+
+                if (!date || !description || !hours) continue;
+
+                // Duplicate Check (to prevent double importing backups)
+                const isDuplicate = tasks.some(t => 
+                    t.date === date && 
+                    t.startTime === startTime && 
+                    t.description === description &&
+                    t.hours == hours // loose equality
+                );
+
+                if (!isDuplicate) {
+                    tasks.push({
+                        id: crypto.randomUUID(),
+                        timestamp: Date.now(),
+                        date,
+                        startTime,
+                        // Clean quotes if regex missed them (unlikely with parseCSVRow but safe)
+                        category: category.trim(), 
+                        description: description.trim(),
+                        hours: parseFloat(hours)
+                    });
+                    importedCount++;
+                }
+            }
+
+            if (importedCount > 0) {
+                save();
+                alert(`Successfully imported ${importedCount} entries.`);
+            } else {
+                alert("No new entries found. Duplicate entries were skipped.");
+            }
+        }
+
+        function parseCSVRow(row) {
+            const result = [];
+            let current = '';
+            let inQuote = false;
+            
+            for (let i = 0; i < row.length; i++) {
+                const char = row[i];
+                if (char === '"') {
+                    if (inQuote && row[i+1] === '"') {
+                        current += '"';
+                        i++; // Skip the escaped quote
+                    } else {
+                        inQuote = !inQuote;
+                    }
+                } else if (char === ',' && !inQuote) {
+                    result.push(current);
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current);
+            return result;
         }
 
     </script>
